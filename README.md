@@ -3,6 +3,7 @@ Using quasi-experimental methods to analyze pitcher performance post-tommy john 
 - Dartmouth College Presidential Scholar project
 - Dartmouth College Independent Study project
 - SABR Analytics poster presentation
+- Collaboration with Professor Michael Herron (Program in Quantitative Social Science)
 
 # Inputs
 - Player statistics from baseballR
