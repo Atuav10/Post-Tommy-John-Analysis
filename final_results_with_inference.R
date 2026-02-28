@@ -1,12 +1,11 @@
-# Final Results Script with Inference Metrics
-# Produces comprehensive dataframe with SC, DID, SynthDID, and placebo test results
+#Final Results Script with Inference Metrics
 
 library(dplyr)
 library(tidyr)
 library(tibble)
 library(synthdid)
 
-# --- 1. Load and Prep Data ----------------------------------------
+#--- 1. Load and Prep Data ----------------------------------------
 all_pitchers <- read.csv("pitchers_updated.csv")
 fip_constants <- read.csv("fip_constant.csv")
 all_pitchers <- left_join(all_pitchers, fip_constants, by = c("season_code" = "season"))
@@ -18,10 +17,10 @@ all_pitchers <- filter(all_pitchers, season_code != 2020)
 
 player_surgery_df <- read.csv("treated_players.csv", stringsAsFactors = FALSE)
 
-# Get list of all TJ surgery pitcher names to exclude from donor pools
+#Get list of all TJ surgery pitcher names to exclude from donor pools
 all_tj_pitchers <- unique(player_surgery_df$player_name)
 
-# --- 2. Initialize Results Data Frame ----------------------------------------
+#--- 2. Initialize Results Data Frame ----------------------------------------
 results_df <- data.frame(
   player_name = character(),
   surgery_year = numeric(),
@@ -48,7 +47,7 @@ results_df <- data.frame(
   stringsAsFactors = FALSE
 )
 
-# Initialize Donor Weights Data Frame
+#Initialize Donor Weights Data Frame
 donor_weights_df <- data.frame(
   player_name = character(),
   donor_name = character(),
@@ -57,10 +56,10 @@ donor_weights_df <- data.frame(
   stringsAsFactors = FALSE
 )
 
-# --- 3. Function to Run Synthetic Control with All Estimators ----------------------------------------
+#--- 3. Function to Run Synthetic Control with All Estimators ----------------------------------------
 run_all_estimators <- function(player_name, injury_year, outcome_var, donor_stats_df) {
   tryCatch({
-    # Prepare data
+    #Prepare data
     sdid_data <- donor_stats_df %>%
       select(Name, Year = season_code, outcome = !!sym(outcome_var)) %>%
       mutate(treated = ifelse(Name == player_name & Year > injury_year, 1, 0))
@@ -74,12 +73,12 @@ run_all_estimators <- function(player_name, injury_year, outcome_var, donor_stat
       stop(sprintf("Invalid setup: N0=%d, T0=%d", setup$N0, setup$T0))
     }
 
-    # Run all three estimators
+    #Run all three estimators
     tau.sc <- sc_estimate(setup$Y, setup$N0, setup$T0)
     tau.sdid <- synthdid_estimate(setup$Y, setup$N0, setup$T0)
     tau.did <- did_estimate(setup$Y, setup$N0, setup$T0)
 
-    # Calculate year-by-year effects (SC only)
+    #Calculate year-by-year effects (SC only)
     omega_weights <- attr(tau.sc, 'weights')$omega
     synthetic_control <- t(omega_weights) %*% setup$Y[1:setup$N0, ]
     synthetic_trajectory <- synthetic_control[(setup$T0 + 1):ncol(setup$Y)]
@@ -90,7 +89,7 @@ run_all_estimators <- function(player_name, injury_year, outcome_var, donor_stat
     year2 <- if(length(yearly_effects) >= 2) yearly_effects[2] else NA
     year3 <- if(length(yearly_effects) >= 3) yearly_effects[3] else NA
 
-    # Get donor names and weights
+    #Get donor names and weights
     donor_names <- rownames(setup$Y)[1:setup$N0]
     weights_vector <- as.numeric(omega_weights)
 
@@ -121,7 +120,7 @@ run_all_estimators <- function(player_name, injury_year, outcome_var, donor_stat
   })
 }
 
-# --- 4. Function to Run Placebo Tests ----------------------------------------
+#--- 4. Function to Run Placebo Tests ----------------------------------------
 run_placebo_tests <- function(player_name, injury_year, years_needed, donor_ids, outcome_var, all_tj_pitchers) {
 
   donor_names_list <- all_pitchers %>%
@@ -133,14 +132,14 @@ run_placebo_tests <- function(player_name, injury_year, years_needed, donor_ids,
   placebo_ates <- c()
 
   for (placebo_player in donor_names_list) {
-    # Create donor pool excluding this placebo player (and ensure no TJ pitchers)
+    #Create donor pool excluding this placebo player (and ensure no TJ pitchers)
     placebo_donor_stats <- all_pitchers %>%
       filter(season_code %in% years_needed) %>%
       filter(!Name %in% all_tj_pitchers) %>%
       filter(Name == placebo_player | (bbref_id %in% donor_ids & Name != placebo_player)) %>%
       select(bbref_id, Name, season_code, Age, SO9, FIP)
 
-    # Run SC
+    #Run SC
     result <- tryCatch({
       sdid_data <- placebo_donor_stats %>%
         select(Name, Year = season_code, outcome = !!sym(outcome_var)) %>%
@@ -164,7 +163,7 @@ run_placebo_tests <- function(player_name, injury_year, years_needed, donor_ids,
   return(placebo_ates)
 }
 
-# --- 5. Main Loop Through Players ----------------------------------------
+#--- 5. Main Loop Through Players ----------------------------------------
 cat("========================================\n")
 cat("RUNNING COMPREHENSIVE ANALYSIS\n")
 cat("========================================\n\n")
@@ -177,7 +176,7 @@ for (i in 1:nrow(player_surgery_df)) {
   cat(sprintf("\n[%d/%d] Processing %s (surgery year: %d)...\n", i, nrow(player_surgery_df), player_name, injury_year))
 
   tryCatch({
-    # Filter to player's data
+    #Filter to player's data
     player_data <- filter(all_pitchers, Name == player_name)
 
     if (nrow(player_data) == 0) {
@@ -185,7 +184,7 @@ for (i in 1:nrow(player_surgery_df)) {
       next
     }
 
-    # Define pre/post treatment periods
+    #Define pre/post treatment periods
     player_pre <- player_data %>%
       filter(season_code <= injury_year) %>%
       arrange(desc(season_code)) %>%
@@ -201,10 +200,10 @@ for (i in 1:nrow(player_surgery_df)) {
       next
     }
 
-    # Determine required seasons
+    #Determine required seasons
     years_needed <- unique(c(player_pre$season_code, player_post$season_code))
 
-    # Identify donor pool (exclude ALL TJ surgery pitchers)
+    #Identify donor pool (exclude ALL TJ surgery pitchers)
     complete_pitchers <- all_pitchers %>%
       filter(!Name %in% all_tj_pitchers) %>%
       filter(season_code %in% years_needed) %>%
@@ -219,7 +218,7 @@ for (i in 1:nrow(player_surgery_df)) {
       next
     }
 
-    # Create combined dataset
+    #Create combined dataset
     donor_stats_df <- all_pitchers %>%
       filter(bbref_id %in% donor_ids | Name == player_name) %>%
       filter(season_code %in% years_needed) %>%
@@ -228,11 +227,11 @@ for (i in 1:nrow(player_surgery_df)) {
     cat(sprintf("  Donor pool: %d pitchers | Years: %s\n",
                 length(donor_ids), paste(years_needed, collapse=", ")))
 
-    # Run estimators for SO9
+    #Run estimators for SO9
     cat("  Running SO9 estimators...\n")
     so9_results <- run_all_estimators(player_name, injury_year, "SO9", donor_stats_df)
 
-    # Run estimators for FIP
+    #Run estimators for FIP
     cat("  Running FIP estimators...\n")
     fip_results <- run_all_estimators(player_name, injury_year, "FIP", donor_stats_df)
 
@@ -241,11 +240,11 @@ for (i in 1:nrow(player_surgery_df)) {
       next
     }
 
-    # Run placebo tests for SO9
+    #Run placebo tests for SO9
     cat("  Running SO9 placebo tests...\n")
     so9_placebo_ates <- run_placebo_tests(player_name, injury_year, years_needed, donor_ids, "SO9", all_tj_pitchers)
 
-    # Calculate SO9 percentile and variance
+    #Calculate SO9 percentile and variance
     if (length(so9_placebo_ates) > 0 && !is.na(so9_results$ate_scm)) {
       so9_percentile <- sum(abs(so9_placebo_ates) <= abs(so9_results$ate_scm)) / length(so9_placebo_ates)
       so9_variance <- so9_results$ate_scm / sd(so9_placebo_ates, na.rm = TRUE)
@@ -254,11 +253,11 @@ for (i in 1:nrow(player_surgery_df)) {
       so9_variance <- NA
     }
 
-    # Run placebo tests for FIP
+    #Run placebo tests for FIP
     cat("  Running FIP placebo tests...\n")
     fip_placebo_ates <- run_placebo_tests(player_name, injury_year, years_needed, donor_ids, "FIP", all_tj_pitchers)
 
-    # Calculate FIP percentile and variance
+    #Calculate FIP percentile and variance
     if (length(fip_placebo_ates) > 0 && !is.na(fip_results$ate_scm)) {
       fip_percentile <- sum(abs(fip_placebo_ates) <= abs(fip_results$ate_scm)) / length(fip_placebo_ates)
       fip_variance <- fip_results$ate_scm / sd(fip_placebo_ates, na.rm = TRUE)
@@ -267,7 +266,7 @@ for (i in 1:nrow(player_surgery_df)) {
       fip_variance <- NA
     }
 
-    # Add to results
+    #Add to results
     results_df <- rbind(results_df, data.frame(
       player_name = player_name,
       surgery_year = injury_year,
@@ -294,17 +293,17 @@ for (i in 1:nrow(player_surgery_df)) {
       stringsAsFactors = FALSE
     ))
 
-    # Add donor weights - merge SO9 and FIP weights by donor name
+    #Add donor weights - merge SO9 and FIP weights by donor name
     if (!is.null(so9_results$donor_names) && !is.null(fip_results$donor_names)) {
-      # Get unique list of all donors from both SO9 and FIP
+      #Get unique list of all donors from both SO9 and FIP
       all_donor_names <- unique(c(so9_results$donor_names, fip_results$donor_names))
 
       for (donor in all_donor_names) {
-        # Find weight in SO9
+        #Find weight in SO9
         so9_idx <- which(so9_results$donor_names == donor)
         weight_so9 <- if(length(so9_idx) > 0) so9_results$weights[so9_idx] else 0
 
-        # Find weight in FIP
+        #Find weight in FIP
         fip_idx <- which(fip_results$donor_names == donor)
         weight_fip <- if(length(fip_idx) > 0) fip_results$weights[fip_idx] else 0
 
@@ -327,7 +326,7 @@ for (i in 1:nrow(player_surgery_df)) {
   })
 }
 
-# --- 6. Save Results ----------------------------------------
+#--- 6. Save Results ----------------------------------------
 cat("\n========================================\n")
 cat("FINAL RESULTS\n")
 cat("========================================\n")
@@ -340,7 +339,7 @@ write.csv(donor_weights_df, "donor_weights.csv", row.names = FALSE)
 cat("Donor weights saved to: donor_weights.csv\n")
 cat(sprintf("Total donor-player combinations: %d\n\n", nrow(donor_weights_df)))
 
-# Display summary statistics
+#Display summary statistics
 if (nrow(results_df) > 0) {
   cat("Summary Statistics:\n")
   cat("\nSO9 Results:\n")
@@ -374,7 +373,7 @@ mean(results_df$fip_year1)
 mean(results_df$fip_year2, na.rm = T)
 mean(results_df$fip_year3, na.rm = T)
 
-# --- 7. Statistical Significance Tests for Year-by-Year Effects ----------------------------------------
+#--- 7. Statistical Significance Tests for Year-by-Year Effects ----------------------------------------
 cat("\n========================================\n")
 cat("YEAR-BY-YEAR COMPARISON TESTS\n")
 cat("========================================\n\n")
@@ -382,7 +381,7 @@ cat("========================================\n\n")
 cat("SO9 Year-by-Year Comparisons:\n")
 cat("----------------------------------------\n")
 
-# SO9: Year 1 vs Year 2
+#SO9: Year 1 vs Year 2
 so9_year1_year2 <- results_df %>%
   filter(!is.na(so9_year1) & !is.na(so9_year2))
 
@@ -400,7 +399,7 @@ if (nrow(so9_year1_year2) > 1) {
   cat("SO9 Year 1 vs Year 2: Insufficient data\n\n")
 }
 
-# SO9: Year 2 vs Year 3
+#SO9: Year 2 vs Year 3
 so9_year2_year3 <- results_df %>%
   filter(!is.na(so9_year2) & !is.na(so9_year3))
 
@@ -421,7 +420,7 @@ if (nrow(so9_year2_year3) > 1) {
 cat("FIP Year-by-Year Comparisons:\n")
 cat("----------------------------------------\n")
 
-# FIP: Year 1 vs Year 2
+#FIP: Year 1 vs Year 2
 fip_year1_year2 <- results_df %>%
   filter(!is.na(fip_year1) & !is.na(fip_year2))
 
@@ -439,7 +438,7 @@ if (nrow(fip_year1_year2) > 1) {
   cat("FIP Year 1 vs Year 2: Insufficient data\n\n")
 }
 
-# FIP: Year 2 vs Year 3
+#FIP: Year 2 vs Year 3
 fip_year2_year3 <- results_df %>%
   filter(!is.na(fip_year2) & !is.na(fip_year3))
 
@@ -460,14 +459,14 @@ if (nrow(fip_year2_year3) > 1) {
 cat("Note: *** indicates p < 0.05 (statistically significant)\n")
 cat("Positive differences indicate effect magnitude decreases over time.\n")
 
-# --- 8. Create Year-by-Year Effect Graphs ----------------------------------------
+#--- 8. Create Year-by-Year Effect Graphs ----------------------------------------
 cat("\n========================================\n")
 cat("CREATING YEAR-BY-YEAR EFFECT GRAPHS\n")
 cat("========================================\n\n")
 
 library(ggplot2)
 
-# SO9 Year-by-Year Graph
+#SO9 Year-by-Year Graph
 so9_yearly_data <- data.frame(
   Year = c(1, 2, 3),
   Mean_Effect = c(
@@ -509,7 +508,7 @@ plot_so9_yearly <- ggplot(so9_yearly_data, aes(x = Year, y = Mean_Effect)) +
 ggsave("so9_yearly_effects.png", plot = plot_so9_yearly, width = 10, height = 6, dpi = 300)
 cat("SO9 yearly effects graph saved to: so9_yearly_effects.png\n")
 
-# FIP Year-by-Year Graph
+#FIP Year-by-Year Graph
 fip_yearly_data <- data.frame(
   Year = c(1, 2, 3),
   Mean_Effect = c(
